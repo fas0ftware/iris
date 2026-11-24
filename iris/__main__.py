@@ -1,6 +1,7 @@
 """iris: one inbox for your tools' notifications.
 
-    iris serve                 listen on 127.0.0.1:8090 (ntfy-compatible), deliver, send the morning digest
+    iris serve                 listen on 127.0.0.1:8090 (ntfy-compatible), deliver, send the morning digest,
+                               and keep ~/.local/state/iris/status.json current for Olympos
     iris send TOPIC "text"     publish a message (to test the rules)
     iris inbox [--topic T]     print recent messages
     iris status [--save]       counts for the last 24 h; --save writes the file Olympos reads
@@ -96,7 +97,8 @@ def main(argv=None) -> int:
             print("iris: listening beyond this machine needs IRIS_TOKEN (16+ characters)", file=sys.stderr)
             return 2
         from .server import serve
-        srv = serve(hub, args.host, args.port, token)
+        status_file = config.state_dir() / "status.json"
+        srv = serve(hub, args.host, args.port, token, on_round=lambda: save_status(store, status_file))
         outs = ", ".join(hub.outputs) or "nowhere (store only)"
         print(f"Iris {__version__} on http://{args.host}:{args.port}/ · delivering to {outs}"
               + (f" · quiet {s.quiet_start:02d}-{s.quiet_end:02d}" if s.quiet_start is not None else ""), flush=True)

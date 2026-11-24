@@ -219,3 +219,23 @@ def test_cli(tmp_path, monkeypatch, capsys):
     cfg.write_text("[quiet]\nhours = 'x'\n")
     assert cli.main(["--config", str(cfg), "inbox"]) == 2
     assert cli.main(["--config", str(tmp_path / "none.toml"), "serve", "--host", "0.0.0.0"]) == 2, "no token: refused"
+
+
+def test_worker_writes_status_each_round(tmp_path):
+    from iris.server import serve
+    store = Store(":memory:")
+    path = tmp_path / "st" / "status.json"
+    h = Hub(Settings(digest_at=""), store, {})
+    srv = serve(h, "127.0.0.1", 0, on_round=lambda: cli.save_status(store, path))
+    try:
+        for _ in range(50):
+            if path.exists():
+                break
+            threading.Event().wait(0.05)
+        data = json.loads(path.read_text())
+        assert data["messages_24h"] == 0 and data["undelivered"] == 0
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    finally:
+        srv.iris_stop.set()
+        srv.iris_wake.set()
+        srv.server_close()

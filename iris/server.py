@@ -123,25 +123,29 @@ def make_handler(hub: Hub, token: str, wake: threading.Event):
     return Handler
 
 
-def worker(hub: Hub, wake: threading.Event, stop: threading.Event, retry: float = 60) -> None:
-    """Deliver right after a message arrives, retry failures every `retry` s, send the digest."""
+def worker(hub: Hub, wake: threading.Event, stop: threading.Event, retry: float = 60,
+           on_round=None) -> None:
+    """Deliver right after a message arrives, retry failures every `retry` s, send the digest,
+    and call `on_round` (writes the status file Olympos reads)."""
     while not stop.is_set():
         try:
             hub.digest(time.time())
             hub.deliver()
             hub.store.trim(time.time() - 90 * 86400)
+            if on_round:
+                on_round()
         except Exception as exc:  # keep serving
-            print(f"(iris worker: {type(exc).__name__}: {exc})")
+            print(f"(iris worker: {type(exc).__name__}: {exc})", flush=True)
         wake.wait(retry)
         wake.clear()
 
 
 # token="" means no token: only allowed on loopback (the CLI refuses anything else without one).
-def serve(hub: Hub, host: str, port: int, token: str = "") -> ThreadingHTTPServer:  # nosec B107
+def serve(hub: Hub, host: str, port: int, token: str = "", on_round=None) -> ThreadingHTTPServer:  # nosec B107
     wake, stop = threading.Event(), threading.Event()
     srv = ThreadingHTTPServer((host, port), make_handler(hub, token, wake))
     srv.daemon_threads = True
-    t = threading.Thread(target=worker, args=(hub, wake, stop), daemon=True)
+    t = threading.Thread(target=worker, args=(hub, wake, stop), kwargs={"on_round": on_round}, daemon=True)
     t.start()
     srv.iris_stop = stop  # type: ignore[attr-defined]
     srv.iris_wake = wake  # type: ignore[attr-defined]
