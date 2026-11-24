@@ -1,0 +1,18 @@
+# ~/.config/iris/config.toml (every key is optional)
+
+[deliver]
+ntfy = ""            # e.g. "https://ntfy.sh/a-long-random-topic"; "" = no phone
+desktop = true       # notify-send on this computer
+
+[quiet]
+hours = "23-07"      # at night only messages at or above `pass` go out
+pass = "high"
+
+[dedup]
+minutes = 30         # the same title and text within 30 minutes is counted, not sent again
+
+[digest]
+at = "08:00"         # one summary of what was held back at night
+
+# [topics.mnemosyne]
+# min = "default"    # "low" backup messages are stored, never delivered

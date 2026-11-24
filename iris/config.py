@@ -100,9 +100,10 @@ def parse(raw: dict) -> Settings:
     if at:
         try:
             h, m = (int(x) for x in at.split(":"))
-            assert 0 <= h <= 23 and 0 <= m <= 59
-        except (ValueError, AssertionError):
+        except ValueError:
             raise ConfigError('digest.at looks like "08:00"') from None
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ConfigError('digest.at looks like "08:00"')
     s.digest_at = at
     for topic, t in (raw.get("topics") or {}).items():
         if isinstance(t, dict) and "min" in t:

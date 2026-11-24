@@ -136,7 +136,8 @@ def worker(hub: Hub, wake: threading.Event, stop: threading.Event, retry: float 
         wake.clear()
 
 
-def serve(hub: Hub, host: str, port: int, token: str = "") -> ThreadingHTTPServer:
+# token="" means no token: only allowed on loopback (the CLI refuses anything else without one).
+def serve(hub: Hub, host: str, port: int, token: str = "") -> ThreadingHTTPServer:  # nosec B107
     wake, stop = threading.Event(), threading.Event()
     srv = ThreadingHTTPServer((host, port), make_handler(hub, token, wake))
     srv.daemon_threads = True

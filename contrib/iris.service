@@ -1,0 +1,16 @@
+[Unit]
+Description=Iris: one inbox for the notifications of your home tools
+After=graphical-session.target
+
+[Service]
+# Settings: ~/.config/iris/config.toml. IRIS_TOKEN (for listening beyond this machine) can go in ~/.config/iris/env
+EnvironmentFile=-%h/.config/iris/env
+WorkingDirectory=%h/.local/share/iris
+ExecStart=/usr/bin/env python3 -m iris serve
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

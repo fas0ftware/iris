@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pyflakes iris tests
+      - run: python -m pytest -q
+      - name: A real server, a publish like ntfy, the inbox
+        run: |
+          printf '[deliver]\ndesktop = false\n' > /tmp/iris.toml
+          IRIS_DB=/tmp/iris.db python -m iris --config /tmp/iris.toml serve --port 8090 &
+          sleep 2
+          curl -sf -H "Title: CI" -H "Priority: high" -d "hello" http://127.0.0.1:8090/ci | grep -q deliver
+          curl -sf http://127.0.0.1:8090/api/messages | grep -q '"title": "CI"'
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install bandit
+      - name: Static analysis (bandit)
+        run: bandit -q -r iris
