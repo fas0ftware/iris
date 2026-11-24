@@ -1,0 +1,138 @@
+"""iris: one inbox for your tools' notifications.
+
+    iris serve                 listen on 127.0.0.1:8090 (ntfy-compatible), deliver, send the morning digest
+    iris send TOPIC "text"     publish a message (to test the rules)
+    iris inbox [--topic T]     print recent messages
+    iris status [--save]       counts for the last 24 h; --save writes the file Olympos reads
+    iris demo                  fill a separate database with fictional messages
+"""
+
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+from . import __version__, config
+from .config import PRIORITIES, ConfigError
+from .core import Hub, desktop_output, message, ntfy_output, summary, topic_ok
+from .store import Store
+
+
+def outputs(s: config.Settings) -> dict:
+    out = {}
+    if s.ntfy:
+        out["ntfy"] = ntfy_output(s.ntfy)
+    if s.desktop:
+        d = desktop_output()
+        if d:
+            out["desktop"] = d
+    return out
+
+
+def save_status(store: Store, path: Path) -> None:
+    data = {"version": __version__, "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            **summary(store, time.time()),
+            "recent": [{k: m[k] for k in ("ts", "topic", "title", "priority", "decision", "repeats")}
+                       for m in store.recent(10)]}
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog="iris", description=__doc__.split("\n\n")[0])
+    p.add_argument("--version", action="version", version=f"iris {__version__}")
+    p.add_argument("--config", type=Path, default=None, help=f"default {config.default_path()}")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sv = sub.add_parser("serve")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8090)
+    sd = sub.add_parser("send")
+    sd.add_argument("topic")
+    sd.add_argument("text")
+    sd.add_argument("--title", default="")
+    sd.add_argument("--priority", choices=PRIORITIES, default="default")
+    ib = sub.add_parser("inbox")
+    ib.add_argument("--topic", default="")
+    ib.add_argument("-n", type=int, default=20)
+    st = sub.add_parser("status")
+    st.add_argument("--save", nargs="?", const="", default=None, metavar="PATH")
+    dm = sub.add_parser("demo")
+    dm.add_argument("--db", default="iris-demo.db")
+    args = p.parse_args(argv)
+
+    try:
+        s = config.load(args.config)
+    except ConfigError as exc:
+        print(f"iris: {exc}", file=sys.stderr)
+        return 2
+
+    if args.cmd == "demo":
+        from .demo import fill
+        store = Store(args.db)
+        fill(store)
+        print(f"Fictional messages written to {args.db}. Try: IRIS_DB={args.db} python -m iris serve --port 8091")
+        return 0
+
+    db = os.environ.get("IRIS_DB") or str(s.db)
+    store = Store(db)
+    hub = Hub(s, store, outputs(s))
+
+    if args.cmd == "serve":
+        token = os.environ.get("IRIS_TOKEN", "")
+        try:
+            loopback = ipaddress.ip_address(args.host).is_loopback
+        except ValueError:
+            loopback = args.host == "localhost"
+        if not loopback and len(token) < 16:
+            print("iris: listening beyond this machine needs IRIS_TOKEN (16+ characters)", file=sys.stderr)
+            return 2
+        from .server import serve
+        srv = serve(hub, args.host, args.port, token)
+        outs = ", ".join(hub.outputs) or "nowhere (store only)"
+        print(f"Iris {__version__} on http://{args.host}:{args.port}/ · delivering to {outs}"
+              + (f" · quiet {s.quiet_start:02d}-{s.quiet_end:02d}" if s.quiet_start is not None else ""), flush=True)
+        try:
+            srv.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            srv.iris_stop.set()  # type: ignore[attr-defined]
+            srv.iris_wake.set()  # type: ignore[attr-defined]
+        return 0
+
+    if args.cmd == "send":
+        if not topic_ok(args.topic):
+            print("iris: topic: letters, digits, - and _ only", file=sys.stderr)
+            return 2
+        m = message(args.topic, {"Title": args.title, "Priority": args.priority}, args.text.encode(), time.time())
+        msg_id, decision = hub.receive(m)
+        hub.deliver()
+        print(f"message {msg_id}: {decision}")
+        return 0
+
+    if args.cmd == "inbox":
+        for m in reversed(store.recent(args.n, args.topic)):
+            rep = f" ×{m['repeats'] + 1}" if m["repeats"] else ""
+            print(f"{time.strftime('%m-%d %H:%M', time.localtime(m['last_ts']))}  {m['priority']:<7} {m['topic']:<10} "
+                  f"{m['title']}{rep}  [{m['decision']}{' → ' + m['delivered'] if m['delivered'] else ''}]")
+        return 0
+
+    if args.cmd == "status":
+        print(json.dumps({"version": __version__, **summary(store, time.time())}, indent=2))
+        if args.save is not None:
+            save_status(store, Path(args.save) if args.save else config.state_dir() / "status.json")
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,28 @@
+:root { --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #6a737d; --line: #e3e6ea; --accent: #7a4fd1;
+        --min: #8b949e; --low: #2f7d4f; --default: #3b6fd4; --high: #c4520f; --urgent: #c42b2b; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1115; --panel: #171a21; --text: #e6e8eb; --muted: #8b949e; --line: #262b34; --accent: #b59cff;
+          --low: #4cc27a; --default: #7aa2ff; --high: #f08a4b; --urgent: #ff5c5c; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header, main, footer { max-width: 52rem; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 20px; } h1 { margin: 0; font-size: 22px; } h1 small { color: var(--muted); font-weight: 400; font-size: 13px; }
+.logo { color: var(--accent); } .muted { color: var(--muted); font-size: 13px; }
+nav { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+nav button { font: inherit; font-size: 13px; padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+nav button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+ol { list-style: none; margin: 0; padding: 0; }
+li { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--min); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+li.p-low { border-left-color: var(--low); } li.p-default { border-left-color: var(--default); }
+li.p-high { border-left-color: var(--high); } li.p-urgent { border-left-color: var(--urgent); }
+.head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.head strong { overflow-wrap: anywhere; flex: 1 1 12rem; } .head time { color: var(--muted); font-size: 12px; margin-left: auto; }
+.prio { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+.topic { font: 12px ui-monospace, monospace; padding: 0 6px; border-radius: 5px; background: var(--bg); }
+.body { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.foot { display: flex; gap: 10px; font-size: 12px; align-items: center; }
+.why { color: var(--muted); } .why.quiet { color: var(--high); } .why.duplicate, .why.below_min { color: var(--min); }
+.rep { font-weight: 700; color: var(--accent); }
+a { color: var(--accent); }
+footer { padding: 20px 16px; }
