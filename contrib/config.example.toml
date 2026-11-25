@@ -16,3 +16,15 @@ at = "08:00"         # one summary of what was held back at night
 
 # [topics.mnemosyne]
 # min = "default"    # "low" backup messages are stored, never delivered
+
+# Rules: the first one whose topic and text match decides (text: case-insensitive, title or body).
+# action: "store" (keep, never deliver), "hold" (for the morning digest), "always" (deliver now,
+# even at night); priority (optional) changes the message's priority first.
+# [[rules]]
+# match = "failed"
+# action = "always"
+#
+# [[rules]]
+# topic = "hestia"
+# match = "recovered"
+# action = "hold"

@@ -239,3 +239,25 @@ def test_worker_writes_status_each_round(tmp_path):
         srv.iris_stop.set()
         srv.iris_wake.set()
         srv.server_close()
+
+
+def test_rules_first_match_wins():
+    from iris.config import Rule
+    s = config.parse({"quiet": {"hours": "23-07"}, "topics": {"mnemosyne": {"min": "default"}}, "rules": [
+        {"topic": "mnemosyne", "match": "backup FAILED", "action": "always", "priority": "urgent"},
+        {"topic": "mnemosyne", "match": "Backup finished", "action": "store"},
+        {"match": "decoy", "priority": "urgent"},
+        {"topic": "hestia", "action": "hold"}]})
+    assert s.rules[0] == Rule(match="backup FAILED", topic="mnemosyne", action="always", priority="urgent")
+    h, store = hub(s, hour=3)   # in quiet hours
+    mid, d = h.receive(msg("Backup failed: disk Z missing", title="Mnemosyne", topic="mnemosyne", prio="low"))
+    assert d == "deliver" and store.recent()[0]["priority"] == "urgent", "rescued from both the minimum and the night"
+    assert h.receive(msg("Backup finished: 12 files", title="Mnemosyne", topic="mnemosyne", prio="high"))[1] == "below_min"
+    assert h.receive(msg("41 attempts on the decoy", title="Cerberus", topic="cerberus", prio="default"))[1] == "deliver", \
+        "priority raised to urgent, which passes quiet hours"
+    h2, _ = hub(s, hour=12)
+    assert h2.receive(msg("battery", topic="hestia", prio="urgent"))[1] == "quiet", "hold even by day"
+    assert h2.receive(msg("other", topic="themis", prio="low"))[1] == "deliver", "no rule: the usual way"
+    for bad in ([{"match": "x", "action": "mute"}], [{"match": "x"}], ["x"], [{"match": "x", "priority": "loud"}]):
+        with pytest.raises(ConfigError):
+            config.parse({"rules": bad})

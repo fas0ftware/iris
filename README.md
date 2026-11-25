@@ -1,6 +1,6 @@
 # Iris
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-informational)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -15,7 +15,9 @@ Iris then decides what actually reaches you:
 - **Quiet hours.** At night only `high` and `urgent` messages go out; the rest
   waits for **one morning digest** ("17 messages held back overnight: 14 from
   mnemosyne, 3 from themis…").
-- **Per-topic minimum.** "Backup finished" can be stored without ever buzzing.
+- **Per-topic minimum.** Low-priority messages of a tool can be stored without ever buzzing.
+- **Rules by text.** "Backup finished": store it. "Backup *failed*": deliver at once, even at
+  night, as urgent. The first matching rule decides.
 - **Delivery that does not lose or double.** To your phone through ntfy and/or
   to this computer's desktop (`notify-send`); a failed delivery is retried, and
   a message one output took is never sent again.
@@ -73,6 +75,20 @@ at = "08:00"           # "" = never
 min = "default"        # below this: stored, never delivered
 ```
 
+### Rules
+
+```toml
+[[rules]]                  # the first matching rule decides
+topic = "mnemosyne"        # optional
+match = "failed"           # case-insensitive, in the title or the body; optional
+action = "always"          # store | hold (morning digest) | always (even at night)
+priority = "urgent"        # optional: change the priority first
+
+[[rules]]
+match = "recovered"
+action = "hold"
+```
+
 Priorities are ntfy's: `min`, `low`, `default`, `high`, `urgent` (or 1–5).
 
 ## Commands
@@ -116,7 +132,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 ```
 
-11 tests: priorities and quiet hours across midnight, the config file and its
+13 tests: priorities and quiet hours across midnight, the config file and its
 errors, ntfy headers (long and short names, a `javascript:` click, escape
 codes), folding repeats inside and outside the window, quiet hours and topic
 minimums, retries that never double-send and one working output being enough,
@@ -128,8 +144,13 @@ publishes to a running server with `curl`, and runs bandit.
 ## Roadmap
 
 - Actions in phone notifications (mute a device in Cerberus from the alert).
-- Rules by text ("ignore *Backup finished* unless it failed").
+- ~~Rules by text~~: done in 0.2.
 - A weekly summary next to the daily digest.
+
+## Changelog
+
+- **0.2.0** – `[[rules]]`: by topic and text, store, hold for the digest or always deliver, and optionally change the priority; the first match wins. The service keeps the status file current for Olympos.
+- **0.1.0** – ntfy-compatible inbox: folds repeats, quiet hours with a morning digest, per-topic minimum, ntfy and desktop delivery with retries.
 
 ## License
 

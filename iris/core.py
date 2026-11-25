@@ -92,6 +92,19 @@ class Hub:
         self.localtime = localtime
 
     def decide(self, m: dict) -> str:
+        """The first matching rule wins (it may also change the priority); then the topic minimum,
+        then quiet hours."""
+        for r in self.s.rules:
+            if r.applies(m):
+                if r.priority:
+                    m["priority"] = r.priority
+                if r.action == "store":
+                    return "below_min"
+                if r.action == "hold":
+                    return "quiet"
+                if r.action == "always":
+                    return "deliver"
+                break
         if rank(m["priority"]) < rank(self.s.topic_min.get(m["topic"], "min")):
             return "below_min"
         hour = self.localtime(m["ts"]).hour
