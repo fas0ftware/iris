@@ -105,6 +105,12 @@ def read_token() -> str:
         return ""
 
 
+def schedule_path() -> Path:
+    """The daily schedule a phone app (Mentor) can take: plain text, one line per part of the day."""
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "iris" / "schedule.txt"
+
+
 def default_path() -> Path:
     base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     return base / "iris" / "config.toml"

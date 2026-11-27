@@ -1,6 +1,6 @@
 # Iris
 
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.5.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-informational)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -137,6 +137,10 @@ network only (`sudo ufw allow from 192.168.1.0/24 to any port 8090 proto tcp`; `
 the line for your network). Paste the pairing code (`http://<this computer>:8090#<token>`) into
 the app. Programs on this computer keep working without the token; everything else needs it.
 
+**Your daily schedule from the computer.** Long programs are easier to write on a keyboard:
+put it in `~/.config/iris/schedule.txt` (or `iris schedule my-week.txt`), and Mentor takes it at
+its next sync when "take the schedule from the computer" is on (`GET /api/schedule`, token needed).
+
 ![Iris tasks (fictional)](docs/tasks.png)
 
 <details><summary>Dark theme</summary>
@@ -157,6 +161,7 @@ the app. Programs on this computer keep working without the token; everything el
 | `iris task KEY done\|snooze\|reopen [--hours H]` | Tick, snooze or reopen a task |
 | `iris plan [--send]` | Today's plan now; `--send` delivers it |
 | `iris pair [--new]` | The pairing code for the phone app (makes the token once) |
+| `iris schedule [FILE]` | Show, or set from a file, the daily schedule the phone app takes |
 | `iris demo [--db PATH]` | Fictional messages for trying the page |
 
 ### API
@@ -167,6 +172,7 @@ the app. Programs on this computer keep working without the token; everything el
 | `GET /api/messages[?topic=]` | The last 200 messages |
 | `GET /api/status` | Counts for 24 hours, messages still waiting, tasks by state |
 | `PUT /api/tasks/<source>` | A tool's whole task list, JSON `{"tasks": [...]}` |
+| `GET /api/schedule` | The daily schedule file for the phone app: `{"text", "updated"}` |
 | `GET /api/tasks[?state=open\|snoozed\|done\|gone\|all]` | Tasks, urgent first |
 | `POST /api/task/<key>/done\|snooze\|reopen` | JSON body; `{"hours": 24}` for snooze |
 | `GET /healthz` | `{"ok": true}` |
@@ -220,6 +226,7 @@ publishes to a running server with `curl`, and runs bandit.
 
 ## Changelog
 
+- **0.5.0** – `iris schedule` and `GET /api/schedule`: the daily schedule written on the computer, for Mentor.
 - **0.4.0** – A phone can pair: `iris pair` makes a token file and prints the pairing code; `[server] host`; local tools need no token even when one is set, everything else does (this also closes DNS rebinding on the loopback-only setup); `/api/status` tells the plan time.
 - **0.3.0** – Tasks: tools send what to do (`PUT /api/tasks/<source>`), urgent ones are announced, the rest go into a daily plan at `plan_at`; tasks close by themselves, can be ticked or snoozed on the page, in the terminal (`iris tasks`, `iris task`, `iris plan`) and through the API; `[tasks] lang = "tr"` for Turkish messages.
 - **0.2.0** – `[[rules]]`: by topic and text, store, hold for the digest or always deliver, and optionally change the priority; the first match wins. The service keeps the status file current for Olympos.

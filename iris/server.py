@@ -8,6 +8,7 @@
     GET  /api/tasks        tasks (JSON), ?state=open|snoozed|done|gone|all
     PUT  /api/tasks/<source>          a tool's whole current task list: {"tasks": [...]}
     POST /api/task/<key>/done|snooze|reopen   from the page (same origin) or an app (token)
+    GET  /api/schedule     the daily schedule file for a phone app: {"text", "updated"}
     GET  /healthz          ok
 
 Programs on this computer (loopback client and loopback Host) need no token. Anything else, such
@@ -121,6 +122,15 @@ def make_handler(hub: Hub, token: str, wake: threading.Event):
                     return self.js(200, hub.tasks.list(time.time(), state))
                 except TaskError as exc:
                     return self.js(400, {"ok": False, "error": str(exc)})
+            if u.path == "/api/schedule":
+                from .config import schedule_path
+                path = schedule_path()
+                try:
+                    text = path.read_text(encoding="utf-8")[:20000]
+                    updated = path.stat().st_mtime
+                except (OSError, UnicodeDecodeError):
+                    text, updated = "", 0
+                return self.js(200, {"text": text, "updated": updated})
             if u.path == "/api/status":
                 return self.js(200, {"version": __version__, **summary(hub.store, time.time()),
                                      "plan_at": hub.s.plan_at, "task_lang": hub.s.task_lang})

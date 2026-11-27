@@ -9,6 +9,7 @@
     iris task KEY done|snooze|reopen [--hours H]
     iris plan [--send]         today's plan now (--send delivers it)
     iris pair [--new]          the code a phone app pairs with (makes the token once)
+    iris schedule [FILE]       show or set the daily schedule a phone app takes
     iris demo                  fill a separate database with fictional messages
 """
 
@@ -83,6 +84,8 @@ def main(argv=None) -> int:
     st.add_argument("--save", nargs="?", const="", default=None, metavar="PATH")
     pr = sub.add_parser("pair")
     pr.add_argument("--new", action="store_true", help="make a new token (paired phones must pair again)")
+    sc = sub.add_parser("schedule")
+    sc.add_argument("file", nargs="?", type=Path, help="copy this file in as the schedule")
     tl = sub.add_parser("tasks")
     tl.add_argument("--all", action="store_true", help="also snoozed, done and recently gone")
     ta = sub.add_parser("task")
@@ -175,6 +178,24 @@ def main(argv=None) -> int:
                   "  [server]\n  host = \"0.0.0.0\"\n")
         net = ".".join(ip.split(".")[:3]) + ".0/24" if ip.count(".") == 3 else "your-network/24"
         print(f"Allow only the home network through the firewall:\n  sudo ufw allow from {net} to any port 8090 proto tcp")
+        return 0
+
+    if args.cmd == "schedule":
+        path = config.schedule_path()
+        if args.file:
+            text = args.file.read_text(encoding="utf-8")
+            if len(text) > 20000:
+                print("iris: the schedule is longer than 20000 characters", file=sys.stderr)
+                return 2
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, path)
+            print(f"Schedule saved to {path}; paired phones take it at their next sync.")
+        elif path.exists():
+            print(path.read_text(encoding="utf-8"), end="")
+        else:
+            print(f"No schedule yet. Write one in {path} (or: iris schedule FILE).")
         return 0
 
     if args.cmd == "tasks":
