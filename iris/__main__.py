@@ -8,6 +8,7 @@
     iris tasks [--all]         what is open (tasks that Olympos, Chronos, ... sent)
     iris task KEY done|snooze|reopen [--hours H]
     iris plan [--send]         today's plan now (--send delivers it)
+    iris pair [--new]          the code a phone app pairs with (makes the token once)
     iris demo                  fill a separate database with fictional messages
 """
 
@@ -51,13 +52,24 @@ def save_status(store: Store, path: Path) -> None:
     os.replace(tmp, path)
 
 
+def lan_address() -> str:
+    """This computer's address on the network with the default route (no packet is sent)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 9))
+            return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="iris", description=__doc__.split("\n\n")[0])
     p.add_argument("--version", action="version", version=f"iris {__version__}")
     p.add_argument("--config", type=Path, default=None, help=f"default {config.default_path()}")
     sub = p.add_subparsers(dest="cmd", required=True)
     sv = sub.add_parser("serve")
-    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--host", default=None, help="default: [server] host, else 127.0.0.1")
     sv.add_argument("--port", type=int, default=8090)
     sd = sub.add_parser("send")
     sd.add_argument("topic")
@@ -69,6 +81,8 @@ def main(argv=None) -> int:
     ib.add_argument("-n", type=int, default=20)
     st = sub.add_parser("status")
     st.add_argument("--save", nargs="?", const="", default=None, metavar="PATH")
+    pr = sub.add_parser("pair")
+    pr.add_argument("--new", action="store_true", help="make a new token (paired phones must pair again)")
     tl = sub.add_parser("tasks")
     tl.add_argument("--all", action="store_true", help="also snoozed, done and recently gone")
     ta = sub.add_parser("task")
@@ -99,13 +113,14 @@ def main(argv=None) -> int:
     hub = Hub(s, store, outputs(s))
 
     if args.cmd == "serve":
-        token = os.environ.get("IRIS_TOKEN", "")
+        token = config.read_token()
+        args.host = args.host or s.host
         try:
             loopback = ipaddress.ip_address(args.host).is_loopback
         except ValueError:
             loopback = args.host == "localhost"
         if not loopback and len(token) < 16:
-            print("iris: listening beyond this machine needs IRIS_TOKEN (16+ characters)", file=sys.stderr)
+            print("iris: listening beyond this machine needs a token (16+ characters): run iris pair", file=sys.stderr)
             return 2
         from .server import serve
         status_file = config.state_dir() / "status.json"
@@ -137,6 +152,29 @@ def main(argv=None) -> int:
             rep = f" ×{m['repeats'] + 1}" if m["repeats"] else ""
             print(f"{time.strftime('%m-%d %H:%M', time.localtime(m['last_ts']))}  {m['priority']:<7} {m['topic']:<10} "
                   f"{m['title']}{rep}  [{m['decision']}{' → ' + m['delivered'] if m['delivered'] else ''}]")
+        return 0
+
+    if args.cmd == "pair":
+        import secrets
+        path = config.token_path()
+        token = config.read_token()
+        if args.new or not token:
+            if os.environ.get("IRIS_TOKEN"):
+                print("iris: IRIS_TOKEN is set in the environment; change it there", file=sys.stderr)
+                return 2
+            token = secrets.token_urlsafe(24)
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(token + "\n")
+            print(f"New token in {path}. Restart Iris: systemctl --user restart iris.service")
+        ip = lan_address()
+        print(f"Pairing code (paste it into the app; it holds the token, keep it private):\n\n  http://{ip}:8090#{token}\n")
+        if s.host in ("127.0.0.1", "localhost", "::1"):
+            print("Iris listens on this computer only. To let the phone in, add to the settings and restart:\n"
+                  "  [server]\n  host = \"0.0.0.0\"\n")
+        net = ".".join(ip.split(".")[:3]) + ".0/24" if ip.count(".") == 3 else "your-network/24"
+        print(f"Allow only the home network through the firewall:\n  sudo ufw allow from {net} to any port 8090 proto tcp")
         return 0
 
     if args.cmd == "tasks":

@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -83,8 +84,25 @@ class Settings:
     topic_min: dict[str, str] = field(default_factory=dict)
     rules: list[Rule] = field(default_factory=list)
     db: Path = Path()
+    host: str = "127.0.0.1"      # [server] host: "0.0.0.0" to let a phone on the home network in (needs a token)
     task_lang: str = "en"        # language of task messages: en | tr
     plan_at: str = "08:30"       # when today's plan (open tasks) goes out; "" = never
+
+
+def token_path() -> Path:
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "iris" / "token"
+
+
+def read_token() -> str:
+    """IRIS_TOKEN, or the token file `iris pair` writes (owner-only)."""
+    env = os.environ.get("IRIS_TOKEN", "").strip()
+    if env:
+        return env
+    try:
+        return token_path().read_text().strip()
+    except OSError:
+        return ""
 
 
 def default_path() -> Path:
@@ -147,6 +165,15 @@ def parse(raw: dict) -> Settings:
         if not (rule.action or rule.priority):
             raise ConfigError(f"rules[{i}] needs an action or a priority")
         s.rules.append(rule)
+    sv = raw.get("server", {})
+    if not isinstance(sv, dict):
+        raise ConfigError("[server] must be a table")
+    s.host = str(sv.get("host", "127.0.0.1")).strip()
+    try:
+        ipaddress.ip_address(s.host)
+    except ValueError:
+        if s.host != "localhost":
+            raise ConfigError("server.host must be an IP address such as 127.0.0.1 or 0.0.0.0") from None
     tk = raw.get("tasks", {})
     if not isinstance(tk, dict):
         raise ConfigError("[tasks] must be a table")
