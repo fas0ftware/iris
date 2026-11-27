@@ -261,3 +261,134 @@ def test_rules_first_match_wins():
     for bad in ([{"match": "x", "action": "mute"}], [{"match": "x"}], ["x"], [{"match": "x", "priority": "loud"}]):
         with pytest.raises(ConfigError):
             config.parse({"rules": bad})
+
+
+# --- tasks ------------------------------------------------------------------------------
+
+from iris.tasks import REOPEN_AFTER, TaskError, validate  # noqa: E402
+
+
+def task(id="firewall", title="Turn the firewall on", prio="default", **kw):
+    return {"id": id, "title": title, "priority": prio, **kw}
+
+
+def test_validate_tasks():
+    out = validate([task(action="line one\nline two\x1b[31m", command="sudo ufw enable\n; rm", link="javascript:x")])
+    assert out[0]["action"] == "line one\nline two[31m" and "\n" not in out[0]["command"] and out[0]["link"] == ""
+    for bad in ("x", [task(id="Bad Id")], [task(title="")], [task(prio="panic")], [task(), task()], [1] ,
+                [task(id=f"t{i}") for i in range(101)]):
+        with pytest.raises(TaskError):
+            validate(bad)
+
+
+def test_sync_opens_announces_urgent_and_resolves_gone_ones():
+    h, store = hub()
+    r = h.sync_tasks("olympos", validate([task(), task("backup", "Backup failed", "high", command="journalctl")]), T0)
+    assert (r["new"], r["gone"]) == (2, 0)
+    sent = store.recent(10, "tasks")
+    assert [m["title"] for m in sent] == ["To do: Backup failed"], "only the urgent one is announced at once"
+    assert "$ journalctl" in sent[0]["body"]
+    # the same list again: nothing new, nothing announced twice
+    r = h.sync_tasks("olympos", validate([task(), task("backup", "Backup failed", "high")]), T0 + 60)
+    assert r["kept"] == 2 and len(store.recent(10, "tasks")) == 1
+    # the backup works again: its task is gone by itself; another source is untouched
+    h.sync_tasks("chronos", validate([task("streak", "Commit today")]), T0 + 90)
+    r = h.sync_tasks("olympos", validate([task()]), T0 + 120)
+    assert r["gone"] == 1
+    assert {t["key"] for t in h.tasks.list(T0 + 120)} == {"olympos:firewall", "chronos:streak"}
+    assert h.tasks.counts()["gone"] == 1
+
+
+def test_done_snooze_and_reopen_when_still_reported():
+    h, _ = hub()
+    h.sync_tasks("olympos", validate([task()]), T0)
+    h.tasks.act("olympos:firewall", "done", T0 + 10)
+    h.sync_tasks("olympos", validate([task()]), T0 + 60)
+    assert h.tasks.get("olympos:firewall")["state"] == "done", "the source needs a moment to notice"
+    h.sync_tasks("olympos", validate([task()]), T0 + 10 + REOPEN_AFTER)
+    t = h.tasks.get("olympos:firewall")
+    assert t["state"] == "open" and t["reopened"] == 1
+    h.tasks.act("olympos:firewall", "snooze", T0 + REOPEN_AFTER + 20, hours=1)
+    assert h.tasks.list(T0 + REOPEN_AFTER + 30) == []
+    assert len(h.tasks.list(T0 + REOPEN_AFTER + 20 + 3601)) == 1, "the snooze ran out"
+    with pytest.raises(TaskError):
+        h.tasks.act("olympos:firewall", "snooze", T0, hours=0)
+    with pytest.raises(KeyError):
+        h.tasks.act("olympos:nope", "done", T0)
+
+
+def test_daily_plan_lists_open_tasks_in_turkish():
+    s = Settings(digest_at="", plan_at="08:30", task_lang="tr")
+    store = Store(":memory:")
+    clock = {"h": 8, "m": 0}
+    h = Hub(s, store, {}, localtime=lambda ts: datetime(2026, 11, 24, clock["h"], clock["m"]))
+    assert h.plan(T0) is None
+    h.sync_tasks("olympos", validate([task(command="sudo ufw enable"), task("x", "Disk encryption", "low")]), T0)
+    assert h.plan(T0) is None, "not yet 08:30"
+    clock["m"] = 31
+    m = h.plan(T0)
+    assert m["title"] == "Bugünün işleri: 2" and m["decision"] == "deliver"
+    assert m["body"].splitlines()[:2] == ["1. Turn the firewall on", "   $ sudo ufw enable"]
+    assert "· Disk encryption" in m["body"]
+    assert h.plan(T0 + 60) is None, "once a day"
+
+
+def test_task_api(server):
+    base, store, got, srv = server
+    js = {"Content-Type": "application/json"}
+    body = json.dumps({"tasks": [task(), task("backup", "Backup failed", "urgent")]}).encode()
+    st, out, _ = call(f"{base}/api/tasks/olympos", body, js, "PUT")
+    assert st == 200 and json.loads(out)["new"] == 2
+    assert call(f"{base}/api/tasks/olympos", body, {**js, "Origin": "http://127.0.0.1"}, "PUT")[0] == 403
+    assert call(f"{base}/api/tasks/olympos", body, {}, "PUT")[0] == 400, "JSON only"
+    assert call(f"{base}/api/tasks/../x", body, js, "PUT")[0] in (400, 404)
+    assert call(f"{base}/api/tasks/olympos", b'{"tasks": "no"}', js, "PUT")[0] == 400
+    tasks = json.loads(call(f"{base}/api/tasks")[1])
+    assert [t["key"] for t in tasks] == ["olympos:backup", "olympos:firewall"], "urgent first"
+    host = base.removeprefix("http://")
+    page = {**js, "Origin": base}
+    assert call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", {**js, "Origin": "http://evil.example"}, "POST")[0] == 403
+    assert call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", {**page, "Host": "evil.example:80"}, "POST")[0] == 403
+    st, out, _ = call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", page, "POST")
+    assert st == 200 and json.loads(out)["task"]["state"] == "done", host
+    assert call(f"{base}/api/task/olympos%3Afirewall/snooze", b'{"hours": "x"}', page, "POST")[0] == 400
+    assert call(f"{base}/api/task/olympos%3Anope/done", b"{}", page, "POST")[0] == 404
+    assert call(f"{base}/api/task/olympos%3Afirewall/explode", b"{}", page, "POST")[0] == 404
+    assert call(f"{base}/api/tasks?state=weird")[0] == 400
+    assert json.loads(call(f"{base}/api/status")[1])["tasks"]["open_urgent"] == 1
+    for _ in range(50):
+        if any(t.startswith("To do: Backup failed") for t in got):
+            break
+        threading.Event().wait(0.05)
+    assert "To do: Backup failed" in got
+
+
+def test_task_api_needs_the_token_on_the_network():
+    from iris.server import serve
+    h = Hub(Settings(digest_at=""), Store(":memory:"), {})
+    srv = serve(h, "127.0.0.1", 0, token="a-long-enough-token")
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    js = {"Content-Type": "application/json"}
+    body = json.dumps({"tasks": [task()]}).encode()
+    try:
+        assert call(f"{base}/api/tasks/olympos", body, js, "PUT")[0] == 401
+        assert call(f"{base}/api/tasks")[0] == 401
+        auth = {"Authorization": "Bearer a-long-enough-token"}
+        assert call(f"{base}/api/tasks/olympos", body, {**js, **auth}, "PUT")[0] == 200
+        st, out, _ = call(f"{base}/api/tasks", headers=auth)
+        assert st == 200 and len(json.loads(out)) == 1, "what a phone app will read"
+        assert call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", {**js, **auth}, "POST")[0] == 200
+    finally:
+        srv.shutdown()
+        srv.iris_stop.set()
+        srv.iris_wake.set()
+
+
+def test_task_config():
+    s = config.parse({"tasks": {"lang": "tr", "plan_at": "09:15"}})
+    assert (s.task_lang, s.plan_at) == ("tr", "09:15")
+    assert config.parse({"tasks": {"plan_at": ""}}).plan_at == ""
+    for bad in ({"tasks": {"lang": "de"}}, {"tasks": {"plan_at": "9"}}, {"tasks": "x"}):
+        with pytest.raises(ConfigError):
+            config.parse(bad)
