@@ -90,6 +90,8 @@ class Hub:
         self.outputs = outputs
         self.clock = clock
         self.localtime = localtime
+        from .tasks import Tasks
+        self.tasks = Tasks(store, settings.task_lang)
 
     def decide(self, m: dict) -> str:
         """The first matching rule wins (it may also change the priority); then the topic minimum,
@@ -173,10 +175,31 @@ class Hub:
         return d
 
 
+    def sync_tasks(self, source: str, items: list[dict], now: float) -> dict:
+        """A tool's current task list; urgent new ones become messages right away."""
+        result = self.tasks.sync(source, items, now)
+        for t in result.pop("announce"):
+            self.receive(self.tasks.announcement(t, now))
+        return result
+
+    def plan(self, now: float, force: bool = False) -> dict | None:
+        """Once a day after plan_at: one message with every open task."""
+        if not force and not self.tasks.plan_due(now, self.s.plan_at, self.localtime):
+            return None
+        self.tasks.mark_planned(now, self.localtime)
+        m = self.tasks.plan(now)
+        if m is None:
+            return None
+        m["decision"] = "deliver"     # asked for at this hour: quiet hours and minimums do not apply
+        m["id"] = self.store.add(m)
+        return m
+
+
 def summary(store, now: float) -> dict:
     """Status for Olympos: what came in during the last 24 hours and what is stuck."""
     c = store.counts(now - 86400)
     stuck = len(store.pending())
     total = sum(v["messages"] + v["repeats"] for v in c.values())
+    from .tasks import Tasks
     return {"messages_24h": total, "decisions": c, "undelivered": stuck,
-            "priorities": list(PRIORITIES)}
+            "priorities": list(PRIORITIES), "tasks": Tasks(store).counts()}

@@ -83,6 +83,8 @@ class Settings:
     topic_min: dict[str, str] = field(default_factory=dict)
     rules: list[Rule] = field(default_factory=list)
     db: Path = Path()
+    task_lang: str = "en"        # language of task messages: en | tr
+    plan_at: str = "08:30"       # when today's plan (open tasks) goes out; "" = never
 
 
 def default_path() -> Path:
@@ -93,6 +95,19 @@ def default_path() -> Path:
 def state_dir() -> Path:
     base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
     return base / "iris"
+
+
+def _clock(at: str, name: str) -> str:
+    """"HH:MM" or "" (off)."""
+    if not at:
+        return ""
+    try:
+        h, m = (int(x) for x in at.split(":"))
+    except ValueError:
+        raise ConfigError(f'{name} looks like "08:00"') from None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise ConfigError(f'{name} looks like "08:00"')
+    return at
 
 
 def parse(raw: dict) -> Settings:
@@ -114,15 +129,7 @@ def parse(raw: dict) -> Settings:
         s.quiet_start, s.quiet_end = a, b
     s.quiet_pass = priority(q.get("pass"), "high")
     s.dedup_minutes = float(raw.get("dedup", {}).get("minutes", 30))
-    at = str(raw.get("digest", {}).get("at", "08:00")).strip()
-    if at:
-        try:
-            h, m = (int(x) for x in at.split(":"))
-        except ValueError:
-            raise ConfigError('digest.at looks like "08:00"') from None
-        if not (0 <= h <= 23 and 0 <= m <= 59):
-            raise ConfigError('digest.at looks like "08:00"')
-    s.digest_at = at
+    s.digest_at = _clock(str(raw.get("digest", {}).get("at", "08:00")).strip(), "digest.at")
     for topic, t in (raw.get("topics") or {}).items():
         if isinstance(t, dict) and "min" in t:
             s.topic_min[str(topic)] = priority(t["min"])
@@ -140,6 +147,13 @@ def parse(raw: dict) -> Settings:
         if not (rule.action or rule.priority):
             raise ConfigError(f"rules[{i}] needs an action or a priority")
         s.rules.append(rule)
+    tk = raw.get("tasks", {})
+    if not isinstance(tk, dict):
+        raise ConfigError("[tasks] must be a table")
+    s.task_lang = str(tk.get("lang", "en")).strip()
+    if s.task_lang not in ("en", "tr"):
+        raise ConfigError('tasks.lang must be "en" or "tr"')
+    s.plan_at = _clock(str(tk.get("plan_at", "08:30")).strip(), "tasks.plan_at")
     if raw.get("db"):
         s.db = Path(str(raw["db"])).expanduser()
     return s

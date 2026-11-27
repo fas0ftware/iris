@@ -28,3 +28,7 @@ at = "08:00"         # one summary of what was held back at night
 # topic = "hestia"
 # match = "recovered"
 # action = "hold"
+
+[tasks]
+lang = "en"          # language of task messages: "en" or "tr"
+plan_at = "08:30"    # today's plan (every open task) once a day; "" = never
