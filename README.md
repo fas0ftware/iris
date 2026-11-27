@@ -1,6 +1,6 @@
 # Iris
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-informational)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -123,7 +123,19 @@ per source. [Olympos](https://github.com/fas0ftware/olympos) turns its findings 
 (`olympos tasks --push`), [Chronos](https://github.com/fas0ftware/chronos) opens one when a
 commit streak is at risk in the evening.
 
-`GET /api/tasks` with the token is what a phone app reads to show the list and tick tasks.
+### On your phone
+
+[Mentor](https://github.com/fas0ftware/mentor) is the phone app for this list. To let it in from
+the home network:
+
+```bash
+python -m iris pair          # makes a token once (~/.config/iris/token, 0600) and prints the code
+```
+
+Then set `[server] host = "0.0.0.0"` in the settings, restart Iris, and open the port to the home
+network only (`sudo ufw allow from 192.168.1.0/24 to any port 8090 proto tcp`; `iris pair` prints
+the line for your network). Paste the pairing code (`http://<this computer>:8090#<token>`) into
+the app. Programs on this computer keep working without the token; everything else needs it.
 
 ![Iris tasks (fictional)](docs/tasks.png)
 
@@ -144,6 +156,7 @@ commit streak is at risk in the evening.
 | `iris tasks [--all]` | Open tasks (with `--all` also snoozed, done and recently gone) |
 | `iris task KEY done\|snooze\|reopen [--hours H]` | Tick, snooze or reopen a task |
 | `iris plan [--send]` | Today's plan now; `--send` delivers it |
+| `iris pair [--new]` | The pairing code for the phone app (makes the token once) |
 | `iris demo [--db PATH]` | Fictional messages for trying the page |
 
 ### API
@@ -160,10 +173,15 @@ commit streak is at risk in the evening.
 
 ## Security
 
-- **Loopback by default.** Listening on another address needs `IRIS_TOKEN`
-  (16+ characters); every request then has to carry
-  `Authorization: Bearer <token>` (what ntfy clients send for an access token),
-  and the page trades a `?token=` for an HttpOnly cookie once.
+- **Loopback by default.** Listening on another address needs a token (16+ characters,
+  `IRIS_TOKEN` or the file `iris pair` writes). A request from another device has to carry
+  `Authorization: Bearer <token>` (what ntfy clients send for an access token), and the page
+  trades a `?token=` for an HttpOnly cookie once. Only a request from this computer **to** a
+  loopback name (`127.0.0.1`, `localhost`) needs no token, so a web page that rebinds its own
+  domain to 127.0.0.1 gets nothing (it still sends its own name as `Host`).
+- **Plain HTTP on the home network.** The token travels unencrypted over your Wi-Fi: keep the
+  port open to the home network only, and make a new token (`iris pair --new`) if a device you
+  do not trust was on it.
 - **No publishing from web pages.** A publish with an `Origin` header is
   refused, so a site you visit cannot post into your inbox from the browser.
 - **Hostile text stays text.** Messages quote what devices and attackers sent
@@ -195,13 +213,14 @@ publishes to a running server with `curl`, and runs bandit.
 
 ## Roadmap
 
-- A phone app for the task list (reads `GET /api/tasks` with the token).
+- ~~A phone app for the task list~~: [Mentor](https://github.com/fas0ftware/mentor), 0.4.
 - Actions in phone notifications ("done" and "snooze" from the alert).
 - ~~Rules by text~~: done in 0.2.
 - A weekly summary next to the daily digest.
 
 ## Changelog
 
+- **0.4.0** – A phone can pair: `iris pair` makes a token file and prints the pairing code; `[server] host`; local tools need no token even when one is set, everything else does (this also closes DNS rebinding on the loopback-only setup); `/api/status` tells the plan time.
 - **0.3.0** – Tasks: tools send what to do (`PUT /api/tasks/<source>`), urgent ones are announced, the rest go into a daily plan at `plan_at`; tasks close by themselves, can be ticked or snoozed on the page, in the terminal (`iris tasks`, `iris task`, `iris plan`) and through the API; `[tasks] lang = "tr"` for Turkish messages.
 - **0.2.0** – `[[rules]]`: by topic and text, store, hold for the digest or always deliver, and optionally change the priority; the first match wins. The service keeps the status file current for Olympos.
 - **0.1.0** – ntfy-compatible inbox: folds repeats, quiet hours with a morning digest, per-topic minimum, ntfy and desktop delivery with retries.
