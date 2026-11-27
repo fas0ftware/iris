@@ -211,6 +211,8 @@ def test_token_on_the_network():
 
 def test_cli(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("IRIS_DB", str(tmp_path / "i.db"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))   # never the real token file
+    monkeypatch.delenv("IRIS_TOKEN", raising=False)
     cfg = tmp_path / "c.toml"
     cfg.write_text("[deliver]\ndesktop = false\n")
     assert cli.main(["--config", str(cfg), "send", "test", "hello", "--title", "Hi"]) == 0
@@ -421,3 +423,26 @@ def test_server_host_setting():
     assert config.parse({}).host == "127.0.0.1"
     with pytest.raises(ConfigError):
         config.parse({"server": {"host": "my laptop"}})
+
+
+def test_schedule_file_for_the_phone(tmp_path, monkeypatch, capsys):
+    from iris.server import serve
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("IRIS_DB", str(tmp_path / "db.sqlite"))
+    src = tmp_path / "mine.txt"
+    src.write_text("Hafta içi\n07:00 Kalk\n", encoding="utf-8")
+    assert cli.main(["--config", str(tmp_path / "none.toml"), "schedule", str(src)]) == 0
+    h = Hub(Settings(digest_at=""), Store(":memory:"), {})
+    srv = serve(h, "127.0.0.1", 0, token="a-long-enough-token")
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    lan = {"Host": f"192.0.2.10:{srv.server_address[1]}"}
+    try:
+        assert call(f"{base}/api/schedule", headers=lan)[0] == 401
+        st, body, _ = call(f"{base}/api/schedule", headers={**lan, "Authorization": "Bearer a-long-enough-token"})
+        data = json.loads(body)
+        assert st == 200 and data["text"].startswith("Hafta içi") and data["updated"] > 0
+    finally:
+        srv.shutdown()
+        srv.iris_stop.set()
+        srv.iris_wake.set()
