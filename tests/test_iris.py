@@ -192,12 +192,17 @@ def test_token_on_the_network():
     srv = serve(h, "127.0.0.1", 0, token="a-long-enough-token")
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
+    lan = {"Host": f"192.0.2.10:{srv.server_address[1]}"}   # how a phone on the network asks
     try:
-        assert call(f"{base}/t", b"x", {}, "POST")[0] == 401
-        assert call(f"{base}/t", b"x", {"Authorization": "Bearer a-long-enough-token"}, "POST")[0] == 200
-        assert call(f"{base}/api/messages")[0] == 401
-        assert call(base + "/")[0] == 401 or call(base + "/")[0] == 404
-        assert call(base + "/healthz")[0] == 200
+        assert call(f"{base}/t", b"x", lan, "POST")[0] == 401
+        assert call(f"{base}/t", b"x", {**lan, "Authorization": "Bearer a-long-enough-token"}, "POST")[0] == 200
+        assert call(f"{base}/t", b"x", {**lan, "Authorization": "Bearer wrong-token-but-long"}, "POST")[0] == 401
+        assert call(f"{base}/api/messages", headers=lan)[0] == 401
+        assert call(base + "/", headers=lan)[0] in (401, 404)
+        assert call(base + "/healthz", headers=lan)[0] == 200
+        # tools on this computer keep working without the token
+        assert call(f"{base}/t", b"x", {}, "POST")[0] == 200
+        assert call(f"{base}/api/messages")[0] == 200
     finally:
         srv.shutdown()
         srv.iris_stop.set()
@@ -348,7 +353,8 @@ def test_task_api(server):
     host = base.removeprefix("http://")
     page = {**js, "Origin": base}
     assert call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", {**js, "Origin": "http://evil.example"}, "POST")[0] == 403
-    assert call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", {**page, "Host": "evil.example:80"}, "POST")[0] == 403
+    assert call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", {**page, "Host": "evil.example:80"}, "POST")[0] in (401, 403)
+    assert call(f"{base}/api/tasks", headers={"Host": "rebound.example:80"})[0] == 401, "DNS rebinding"
     st, out, _ = call(f"{base}/api/task/olympos%3Afirewall/done", b"{}", page, "POST")
     assert st == 200 and json.loads(out)["task"]["state"] == "done", host
     assert call(f"{base}/api/task/olympos%3Afirewall/snooze", b'{"hours": "x"}', page, "POST")[0] == 400
@@ -369,12 +375,12 @@ def test_task_api_needs_the_token_on_the_network():
     srv = serve(h, "127.0.0.1", 0, token="a-long-enough-token")
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
-    js = {"Content-Type": "application/json"}
+    js = {"Content-Type": "application/json", "Host": f"192.0.2.10:{srv.server_address[1]}"}
     body = json.dumps({"tasks": [task()]}).encode()
     try:
         assert call(f"{base}/api/tasks/olympos", body, js, "PUT")[0] == 401
-        assert call(f"{base}/api/tasks")[0] == 401
-        auth = {"Authorization": "Bearer a-long-enough-token"}
+        assert call(f"{base}/api/tasks", headers={"Host": js["Host"]})[0] == 401
+        auth = {"Authorization": "Bearer a-long-enough-token", "Host": js["Host"]}
         assert call(f"{base}/api/tasks/olympos", body, {**js, **auth}, "PUT")[0] == 200
         st, out, _ = call(f"{base}/api/tasks", headers=auth)
         assert st == 200 and len(json.loads(out)) == 1, "what a phone app will read"
@@ -392,3 +398,26 @@ def test_task_config():
     for bad in ({"tasks": {"lang": "de"}}, {"tasks": {"plan_at": "9"}}, {"tasks": "x"}):
         with pytest.raises(ConfigError):
             config.parse(bad)
+
+
+def test_pair_makes_a_private_token_once(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("IRIS_TOKEN", raising=False)
+    monkeypatch.setenv("IRIS_DB", str(tmp_path / "db.sqlite"))
+    assert cli.main(["--config", str(tmp_path / "none.toml"), "pair"]) == 0
+    out = capsys.readouterr().out
+    tok = (tmp_path / "iris" / "token").read_text().strip()
+    assert len(tok) >= 24 and f"#{tok}" in out and 'host = "0.0.0.0"' in out
+    assert stat.S_IMODE((tmp_path / "iris" / "token").stat().st_mode) == 0o600
+    cli.main(["--config", str(tmp_path / "none.toml"), "pair"])
+    assert (tmp_path / "iris" / "token").read_text().strip() == tok, "kept"
+    cli.main(["--config", str(tmp_path / "none.toml"), "pair", "--new"])
+    assert (tmp_path / "iris" / "token").read_text().strip() != tok
+    assert config.read_token() == (tmp_path / "iris" / "token").read_text().strip()
+
+
+def test_server_host_setting():
+    assert config.parse({"server": {"host": "0.0.0.0"}}).host == "0.0.0.0"
+    assert config.parse({}).host == "127.0.0.1"
+    with pytest.raises(ConfigError):
+        config.parse({"server": {"host": "my laptop"}})

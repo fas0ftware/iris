@@ -10,13 +10,15 @@
     POST /api/task/<key>/done|snooze|reopen   from the page (same origin) or an app (token)
     GET  /healthz          ok
 
-Loopback only unless a token is set: then every request needs `Authorization: Bearer <token>`
-(ntfy clients send that for an access token) or, for the page, a ?token= once (cookie).
+Programs on this computer (loopback client and loopback Host) need no token. Anything else, such
+as a phone on the home network, needs `Authorization: Bearer <token>` (ntfy clients send that for
+an access token) or, for the page, a ?token= once (cookie); with no token set it is refused.
 """
 
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import threading
 import time
@@ -64,9 +66,25 @@ def make_handler(hub: Hub, token: str, wake: threading.Event):
         def js(self, code: int, obj) -> None:
             self.send(code, json.dumps(obj).encode())
 
+        def local(self) -> bool:
+            """A program on this computer talking to this computer: the client is loopback and so
+            is the Host it asked for. (A web page that rebinds its own name to 127.0.0.1 still
+            sends its own name as Host, so it is not local.)"""
+            try:
+                client_ok = ipaddress.ip_address(self.client_address[0]).is_loopback
+            except ValueError:
+                client_ok = False
+            port = self.server.server_address[1]
+            return client_ok and self.headers.get("Host", "") in (f"127.0.0.1:{port}", f"localhost:{port}",
+                                                                   f"[::1]:{port}")
+
         def authorized(self) -> bool:
-            if not token:
+            """Local tools need no token (they never had one); everything else needs it, and
+            without a token set nothing else gets in."""
+            if self.local():
                 return True
+            if not token:
+                return False
             given = ""
             auth = self.headers.get("Authorization", "")
             if auth.startswith("Bearer "):
@@ -104,7 +122,8 @@ def make_handler(hub: Hub, token: str, wake: threading.Event):
                 except TaskError as exc:
                     return self.js(400, {"ok": False, "error": str(exc)})
             if u.path == "/api/status":
-                return self.js(200, {"version": __version__, **summary(hub.store, time.time())})
+                return self.js(200, {"version": __version__, **summary(hub.store, time.time()),
+                                     "plan_at": hub.s.plan_at, "task_lang": hub.s.task_lang})
             return self.js(404, {"ok": False, "error": "not found"})
 
         def read_json(self):
