@@ -3,3 +3,9 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.db
+
+# Secrets never go into git
+.env
+.env.*
+token
+*.token
