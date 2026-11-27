@@ -26,3 +26,15 @@ li.p-high { border-left-color: var(--high); } li.p-urgent { border-left-color: v
 .rep { font-weight: 700; color: var(--accent); }
 a { color: var(--accent); }
 footer { padding: 20px 16px; }
+h2 { font-size: 15px; margin: 18px 0 8px; } h2 small { font-weight: 400; }
+.task .foot { flex-wrap: wrap; margin-top: 6px; }
+.task.s-done, .task.s-gone, .task.s-snoozed { opacity: .7; }
+.task.s-gone strong { text-decoration: line-through; }
+button { font: inherit; font-size: 13px; padding: 3px 12px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+button.ghost { background: var(--panel); color: var(--text); border-color: var(--line); }
+button.small { font-size: 12px; padding: 1px 8px; background: var(--panel); color: var(--text); border-color: var(--line); }
+button:disabled { opacity: .5; cursor: default; }
+.cmdrow { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+.cmd { font: 13px ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; overflow-wrap: anywhere; flex: 1 1 auto; }
+details summary { cursor: pointer; }
+#tasks-other-box { margin-top: 4px; } #tasks-other { margin-top: 8px; }

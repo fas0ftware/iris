@@ -14,6 +14,12 @@
   <p id="stats" class="muted"></p>
 </header>
 <main>
+  <section id="tasks-box" hidden>
+    <h2>To do <small id="tasks-count" class="muted"></small></h2>
+    <ol id="tasks" aria-live="polite"></ol>
+    <details id="tasks-other-box" hidden><summary class="muted" id="tasks-other-sum"></summary><ol id="tasks-other"></ol></details>
+  </section>
+  <h2>Inbox</h2>
   <nav id="topics" aria-label="Topics"></nav>
   <ol id="inbox" aria-live="polite"></ol>
 </main>

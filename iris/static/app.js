@@ -18,8 +18,68 @@ async function get(path) {
   return r.json();
 }
 
+async function act(key, what, hours) {
+  const r = await fetch(`/api/task/${encodeURIComponent(key)}/${what}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(hours ? { hours } : {}),
+  });
+  if (!r.ok) throw new Error(`${what}: ${r.status}`);
+  return load();
+}
+
+function button(text, onClick, cls) {
+  const b = el("button", text, cls || "");
+  b.type = "button";
+  b.addEventListener("click", () => { b.disabled = true; onClick().catch((e) => { b.disabled = false; alert(e.message); }); });
+  return b;
+}
+
+const STATE = { snoozed: "snoozed", done: "done", gone: "resolved by itself" };
+
+function taskItem(t) {
+  const li = el("li", undefined, `task p-${t.priority} s-${t.state}`);
+  const head = el("div", undefined, "head");
+  head.append(el("span", t.priority, "prio"), el("span", t.source, "topic"), el("strong", t.title));
+  if (t.reopened) head.append(el("span", "still there", "why quiet"));
+  if (t.state !== "open") head.append(el("span", STATE[t.state] +
+    (t.state === "snoozed" ? ` until ${when(t.snooze_until)}` : ""), "why"));
+  li.append(head);
+  if (t.action) li.append(el("p", t.action, "body"));
+  if (t.command) {
+    const code = el("code", t.command, "cmd");
+    const copy = button("copy", async () => { await navigator.clipboard.writeText(t.command); copy.disabled = false; copy.textContent = "copied"; }, "small");
+    const row = el("div", undefined, "cmdrow");
+    row.append(code, copy);
+    li.append(row);
+  }
+  if (t.why) { const d = el("details"); d.append(el("summary", "why", "muted"), el("p", t.why, "body muted")); li.append(d); }
+  const foot = el("div", undefined, "foot");
+  if (t.state === "open") {
+    foot.append(button("Done", () => act(t.key, "done")), button("Snooze 1 day", () => act(t.key, "snooze", 24), "ghost"),
+      button("1 week", () => act(t.key, "snooze", 168), "ghost"));
+  } else if (t.state !== "gone") {
+    foot.append(button("Reopen", () => act(t.key, "reopen"), "ghost"));
+  }
+  foot.append(el("span", `since ${when(t.first_seen)}`, "muted"));
+  if (t.link) { const a = el("a", "open"); a.href = t.link; a.rel = "noopener noreferrer"; a.target = "_blank"; foot.append(a); }
+  li.append(foot);
+  return li;
+}
+
+function renderTasks(tasks) {
+  const open = tasks.filter((t) => t.state === "open");
+  const other = tasks.filter((t) => t.state !== "open");
+  $("tasks-box").hidden = !tasks.length;
+  $("tasks-count").textContent = open.length ? `${open.length} open` : "nothing open";
+  $("tasks").replaceChildren(...open.map(taskItem));
+  if (!open.length) $("tasks").append(el("li", "All done. New tasks appear here when your tools find something to do.", "muted"));
+  $("tasks-other-box").hidden = !other.length;
+  $("tasks-other-sum").textContent = `${other.length} snoozed, done or resolved (last 7 days)`;
+  $("tasks-other").replaceChildren(...other.map(taskItem));
+}
+
 async function load() {
-  const [status, all] = await Promise.all([get("/api/status"), get("/api/messages")]);
+  const [status, all, tasks] = await Promise.all([get("/api/status"), get("/api/messages"), get("/api/tasks?state=all")]);
+  renderTasks(tasks);
   $("ver").textContent = `v${status.version}`;
   const d = status.decisions || {};
   const n = (k) => (d[k] ? d[k].messages : 0);
