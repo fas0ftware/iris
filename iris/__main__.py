@@ -5,6 +5,9 @@
     iris send TOPIC "text"     publish a message (to test the rules)
     iris inbox [--topic T]     print recent messages
     iris status [--save]       counts for the last 24 h; --save writes the file Olympos reads
+    iris tasks [--all]         what is open (tasks that Olympos, Chronos, ... sent)
+    iris task KEY done|snooze|reopen [--hours H]
+    iris plan [--send]         today's plan now (--send delivers it)
     iris demo                  fill a separate database with fictional messages
 """
 
@@ -66,6 +69,14 @@ def main(argv=None) -> int:
     ib.add_argument("-n", type=int, default=20)
     st = sub.add_parser("status")
     st.add_argument("--save", nargs="?", const="", default=None, metavar="PATH")
+    tl = sub.add_parser("tasks")
+    tl.add_argument("--all", action="store_true", help="also snoozed, done and recently gone")
+    ta = sub.add_parser("task")
+    ta.add_argument("key")
+    ta.add_argument("what", choices=("done", "snooze", "reopen"))
+    ta.add_argument("--hours", type=float, default=24)
+    pl = sub.add_parser("plan")
+    pl.add_argument("--send", action="store_true")
     dm = sub.add_parser("demo")
     dm.add_argument("--db", default="iris-demo.db")
     args = p.parse_args(argv)
@@ -126,6 +137,39 @@ def main(argv=None) -> int:
             rep = f" ×{m['repeats'] + 1}" if m["repeats"] else ""
             print(f"{time.strftime('%m-%d %H:%M', time.localtime(m['last_ts']))}  {m['priority']:<7} {m['topic']:<10} "
                   f"{m['title']}{rep}  [{m['decision']}{' → ' + m['delivered'] if m['delivered'] else ''}]")
+        return 0
+
+    if args.cmd == "tasks":
+        rows = hub.tasks.list(time.time(), "all" if args.all else "open")
+        for t in rows:
+            state = "" if t["state"] == "open" else f"[{t['state']}] "
+            print(f"{t['priority']:<7} {state}{t['title']}   ({t['key']})")
+            if t["command"]:
+                print(f"        $ {t['command']}")
+        if not rows:
+            print("nothing open")
+        return 0
+
+    if args.cmd == "task":
+        from .tasks import TaskError
+        try:
+            t = hub.tasks.act(args.key, args.what, time.time(), args.hours)
+        except KeyError:
+            print(f"iris: no task {args.key} (see: iris tasks --all)", file=sys.stderr)
+            return 1
+        except TaskError as exc:
+            print(f"iris: {exc}", file=sys.stderr)
+            return 2
+        print(f"{t['key']}: {t['state']}")
+        return 0
+
+    if args.cmd == "plan":
+        if args.send:
+            m = hub.plan(time.time(), force=True)
+            hub.deliver()
+        else:
+            m = hub.tasks.plan(time.time())
+        print(f"{m['title']}\n{m['body']}" if m else "nothing open")
         return 0
 
     if args.cmd == "status":
