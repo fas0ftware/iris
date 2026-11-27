@@ -1,3 +1,3 @@
 """Iris: one inbox for the notifications of every home tool, in front of ntfy and the desktop."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

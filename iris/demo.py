@@ -27,3 +27,40 @@ def fill(store: Store, now: float | None = None) -> None:
             store.fold(mid, now + off + 60)
         if decision == "quiet":
             store.mark_digested([mid])   # the demo already holds this morning's digest
+    # A few tasks, as Olympos and Chronos would send them.
+    from .tasks import Tasks, validate
+    tasks = Tasks(store)
+    tasks.sync("olympos", validate([
+        {"id": "network:cerberus:decoy", "title": "Look at the network events", "priority": "urgent",
+         "action": "192.0.2.77 is trying passwords on the decoy.", "link": "http://127.0.0.1:8470/"},
+        {"id": "aegis:firewall", "title": "Turn the firewall on", "priority": "high",
+         "action": "Block what comes in, allow what goes out.",
+         "command": "sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw enable",
+         "why": "ufw is installed but switched off: its service runs, but loads no rules"},
+        {"id": "aegis:updates", "title": "Install the waiting updates", "priority": "default",
+         "action": "Then restart if a new kernel came.", "command": "sudo apt update && sudo apt upgrade"},
+        {"id": "project:olympos:push", "title": "Push olympos", "priority": "default",
+         "action": "2 commit(s) not pushed.", "command": "git -C ~/projects/olympos push"},
+        {"id": "aegis:secure-boot", "title": "Turn Secure Boot on", "priority": "low",
+         "action": "In the firmware settings (F2/Del at power-on)."},
+        {"id": "backup:old", "title": "Backup is not working", "priority": "high", "action": "Is the disk plugged in?"},
+    ]), now - 3 * 3600)
+    tasks.act("olympos:aegis:secure-boot", "snooze", now - 3 * 3600, hours=24 * 7)
+    tasks.sync("olympos", validate([   # the backup came back: its task closed by itself
+        {"id": "network:cerberus:decoy", "title": "Look at the network events", "priority": "urgent",
+         "action": "192.0.2.77 is trying passwords on the decoy.", "link": "http://127.0.0.1:8470/"},
+        {"id": "aegis:firewall", "title": "Turn the firewall on", "priority": "high",
+         "action": "Block what comes in, allow what goes out.",
+         "command": "sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw enable",
+         "why": "ufw is installed but switched off: its service runs, but loads no rules"},
+        {"id": "aegis:updates", "title": "Install the waiting updates", "priority": "default",
+         "action": "Then restart if a new kernel came.", "command": "sudo apt update && sudo apt upgrade"},
+        {"id": "project:olympos:push", "title": "Push olympos", "priority": "default",
+         "action": "2 commit(s) not pushed.", "command": "git -C ~/projects/olympos push"},
+        {"id": "aegis:secure-boot", "title": "Turn Secure Boot on", "priority": "low",
+         "action": "In the firmware settings (F2/Del at power-on)."},
+    ]), now - 600)
+    tasks.sync("chronos", validate([{"id": "streak", "title": "Commit today: 6-day streak", "priority": "high",
+                                     "action": "No commit yet today. One commit before midnight keeps the streak going."}]),
+               now - 120)
+    tasks.act("chronos:streak", "done", now - 60)
